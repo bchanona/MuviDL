@@ -59,9 +59,13 @@ export class RedisTaskStore {
     }
     try {
       const data = await this.redis.hget(TASKS_KEY, id);
-      console.log('[RedisTaskStore] Got data:', data);
+      console.log('[RedisTaskStore] Got data:', data, '- Type:', typeof data);
       if (!data) return null;
-      return typeof data === 'string' ? JSON.parse(data) : null;
+      
+      if (typeof data === 'string') {
+        return JSON.parse(data);
+      }
+      return data as DownloadTask;
     } catch (error) {
       console.log('[RedisTaskStore] Get FAILED:', error);
       return null;
@@ -76,8 +80,9 @@ export class RedisTaskStore {
     try {
       const tasks = await this.redis.hgetall(TASKS_KEY);
       if (!tasks) return [];
+      console.log('[RedisTaskStore] All tasks raw:', tasks);
       return Object.values(tasks).map((v) =>
-        typeof v === 'string' ? JSON.parse(v) : v
+        typeof v === 'string' ? JSON.parse(v) : v as DownloadTask
       );
     } catch (error) {
       console.log('[RedisTaskStore] GetAll FAILED:', error);
