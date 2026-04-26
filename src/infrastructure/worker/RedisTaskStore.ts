@@ -5,20 +5,31 @@ const TASKS_KEY = 'muvidl:tasks';
 
 export class RedisTaskStore {
   private redis: Redis;
+  private isConnected: boolean = false;
 
   constructor() {
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    
+    console.log('[RedisTaskStore] Initializing with URL:', url ? 'SET' : 'NOT SET');
+    console.log('[RedisTaskStore] Token:', token ? 'SET' : 'NOT SET');
+    
     this.redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL!,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+      url: url!,
+      token: token!,
     });
   }
 
   async saveTask(task: DownloadTask): Promise<void> {
+    console.log('[RedisTaskStore] Saving task:', task.id);
     await this.redis.hset(TASKS_KEY, { [task.id]: JSON.stringify(task) });
+    console.log('[RedisTaskStore] Task saved:', task.id);
   }
 
   async getTask(id: string): Promise<DownloadTask | null> {
+    console.log('[RedisTaskStore] Getting task:', id);
     const data = await this.redis.hget(TASKS_KEY, id);
+    console.log('[RedisTaskStore] Got data:', data);
     if (!data) return null;
     return typeof data === 'string' ? JSON.parse(data) : null;
   }
