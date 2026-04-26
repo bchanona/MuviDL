@@ -2,7 +2,7 @@
 
 ## Base URL
 ```
-http://TU_SERVIDOR:3000/api/v1
+https://muvidl-api.onrender.com/api/v1
 ```
 
 ---
@@ -241,7 +241,7 @@ object NetworkModule {
     @Provides
     fun provideRetrofit(): Retrofit {
         return Retrofit.Builder()
-            .baseUrl("http://TU_SERVIDOR:3000/api/v1/")
+            .baseUrl("https://muvidl-api.onrender.com/api/v1/")
             .client(OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
