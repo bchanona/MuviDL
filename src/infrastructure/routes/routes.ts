@@ -81,7 +81,7 @@ router.post('/download', async (req: Request, res: Response) => {
     const mediaType: MediaType = type === 'audio' ? 'audio' : 'video';
     const task = await startDownloadUseCase.execute(url, mediaType);
     
-    console.log('[Route] Download started, task:', task);
+    console.log('[Route] Download started, task ID:', task.id, 'status:', task.status);
     res.json(task);
   } catch (error) {
     console.log('[Route] Download error:', error);
@@ -93,7 +93,9 @@ router.post('/download', async (req: Request, res: Response) => {
 router.get('/download/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params as { id: string };
+    console.log('[Route] Getting status for ID:', id);
     const task = await getDownloadStatusUseCase.execute(id);
+    console.log('[Route] Task result:', task);
     if (!task) {
       res.status(404).json({ error: 'Download not found' });
       return;
