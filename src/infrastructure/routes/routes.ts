@@ -10,6 +10,8 @@ import { MediaType } from '../../domain/entities/Media';
 import { isValidUrl, getSupportedSources } from '../../shared/utils/UrlValidator';
 import { autoDebugger } from '../worker/AutoDebugger';
 import { cookieManager } from '../worker/CookieManager';
+import { taskStore } from '../worker/TaskStore';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -258,6 +260,57 @@ router.post('/cookies/rotate', (_req: Request, res: Response) => {
     res.json({ message: 'Rotated to next profile', profile });
   } else {
     res.status(400).json({ error: 'No valid profiles available' });
+  }
+});
+
+router.post('/download/direct', async (req: Request, res: Response) => {
+  try {
+    const { url, type } = req.body;
+    if (!url) {
+      res.status(400).json({ error: 'URL is required' });
+      return;
+    }
+
+    console.log('[DirectDownload] Starting for:', url);
+
+    const downloadType = type === 'audio' ? 'audio' : 'video';
+    const ext = downloadType === 'audio' ? 'mp3' : 'mp4';
+    const outputFile = path.join('./downloads', `direct_${Date.now()}.${ext}`);
+
+    const args = downloadType === 'audio'
+      ? ['-x', '--audio-format', 'mp3', '-o', outputFile, url]
+      : ['-f', 'best', '-o', outputFile, url];
+
+    const child = spawn('yt-dlp', args);
+    let output = '';
+    let errorOutput = '';
+
+    child.stdout?.on('data', (data) => { output += data.toString(); });
+    child.stderr?.on('data', (data) => { errorOutput += data.toString(); });
+
+    res.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': 'attachment; filename="downloading"',
+    });
+
+    child.on('close', (code) => {
+      if (code === 0 && fs.existsSync(outputFile)) {
+        const fileStream = fs.createReadStream(outputFile);
+        fileStream.pipe(res);
+        fileStream.on('end', () => {
+          fs.unlinkSync(outputFile);
+        });
+      } else {
+        res.end('Error downloading: ' + errorOutput);
+      }
+    });
+
+    child.on('error', (error) => {
+      res.end('Error: ' + error.message);
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(400).json({ error: message });
   }
 });
 
