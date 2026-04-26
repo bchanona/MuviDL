@@ -6,6 +6,7 @@ import fs from 'fs';
 import { detectSource } from '../../shared/utils/UrlValidator';
 import { autoDebugger } from './AutoDebugger';
 import { taskStore } from './TaskStore';
+import { redisTaskStore } from './RedisTaskStore';
 
 interface ProcessEntry {
   process: ChildProcess;
@@ -16,6 +17,14 @@ const COOKIES_FILE = './cookies.txt';
 
 function hasCookiesFile(): boolean {
   return fs.existsSync(COOKIES_FILE);
+}
+
+function useRedis(): boolean {
+  return !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+}
+
+function getStore() {
+  return useRedis() ? redisTaskStore : taskStore;
 }
 
 export class DownloadWorker extends EventEmitter {
@@ -83,7 +92,12 @@ export class DownloadWorker extends EventEmitter {
       updatedAt: new Date(),
     };
 
-    taskStore.saveTask(task);
+    const store = getStore();
+    if (useRedis()) {
+      await (store as typeof redisTaskStore).saveTask(task);
+    } else {
+      (store as typeof taskStore).saveTask(task);
+    }
     this.processes.set(mediaId, { process: null as unknown as ChildProcess, task });
 
     const args = this.getArgs(url, type);
@@ -96,7 +110,7 @@ export class DownloadWorker extends EventEmitter {
     this.processes.set(mediaId, entry);
 
     entry.task.status = 'downloading';
-    taskStore.saveTask(entry.task);
+    this.saveTask(entry.task);
     this.emit('start', { mediaId, url });
 
     childProcess.stdout?.on('data', (data: Buffer) => {
@@ -110,7 +124,7 @@ export class DownloadWorker extends EventEmitter {
         entry.task.progress = 100;
         entry.task.completedAt = new Date();
         entry.task.filePath = filepath;
-        taskStore.saveTask(entry.task);
+        this.saveTask(entry.task);
         autoDebugger.logSuccess(url, source);
         this.emit('complete', { mediaId, filepath });
       }
@@ -130,7 +144,7 @@ export class DownloadWorker extends EventEmitter {
     childProcess.on('error', (error: Error) => {
       entry.task.status = 'failed';
       entry.task.error = error.message;
-      taskStore.saveTask(entry.task);
+      this.saveTask(entry.task);
       autoDebugger.logFailure(url, source, error.message, '');
       this.emit('error', { mediaId, error: error.message });
     });
@@ -139,15 +153,23 @@ export class DownloadWorker extends EventEmitter {
       if (code !== 0 && entry.task.status !== 'completed' && entry.task.status !== 'cancelled') {
         entry.task.status = 'failed';
         entry.task.error = `Process exited with code ${code}`;
-        taskStore.saveTask(entry.task);
+        this.saveTask(entry.task);
         autoDebugger.logFailure(url, source, `Exit code: ${code}`, '');
         this.emit('error', { mediaId, error: entry.task.error });
       }
-      taskStore.saveTask(entry.task);
+      this.saveTask(entry.task);
       this.processes.delete(mediaId);
     });
 
     return entry.task;
+  }
+
+  private async saveTask(task: DownloadTask): Promise<void> {
+    if (useRedis()) {
+      await redisTaskStore.saveTask(task);
+    } else {
+      taskStore.saveTask(task);
+    }
   }
 
   async cancel(mediaId: string): Promise<void> {
@@ -160,14 +182,22 @@ export class DownloadWorker extends EventEmitter {
     entry.task.status = 'cancelled';
     entry.task.updatedAt = new Date();
     this.processes.delete(mediaId);
-    taskStore.deleteTask(mediaId);
+    
+    if (useRedis()) {
+      await redisTaskStore.deleteTask(mediaId);
+    } else {
+      taskStore.deleteTask(mediaId);
+    }
     this.emit('cancel', { mediaId });
   }
 
-  getStatus(mediaId: string): DownloadTask | null {
+  async getStatus(mediaId: string): Promise<DownloadTask | null> {
     const entry = this.processes.get(mediaId);
     if (entry) return entry.task;
     
+    if (useRedis()) {
+      return await redisTaskStore.getTask(mediaId);
+    }
     return taskStore.getTask(mediaId);
   }
 
@@ -176,7 +206,10 @@ export class DownloadWorker extends EventEmitter {
     return entry ? entry.task.progress : 0;
   }
 
-  getAllTasks(): DownloadTask[] {
+  async getAllTasks(): Promise<DownloadTask[]> {
+    if (useRedis()) {
+      return await redisTaskStore.getAllTasks();
+    }
     return taskStore.getAllTasks();
   }
 }
