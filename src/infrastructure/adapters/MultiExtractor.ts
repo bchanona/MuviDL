@@ -1,4 +1,4 @@
-import { spawn, execSync } from 'child_process';
+import { spawn } from 'child_process';
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
@@ -31,7 +31,7 @@ const PIPED_INSTANCES = [
   'https://pipedapi.kavin.rocks',
 ];
 
-async function fetchJson(url: string, timeout: number = 10000): Promise<unknown> {
+async function fetchJson(url: string, timeout: number = 8000): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
     const client = parsed.protocol === 'https:' ? https : http;
@@ -59,6 +59,7 @@ async function fetchJson(url: string, timeout: number = 10000): Promise<unknown>
 async function extractYouTubeInvidious(videoId: string): Promise<ExtractorResult> {
   for (const instance of INVIDIOUS_INSTANCES) {
     try {
+      console.log('[MultiExtractor] Trying Invidious:', instance);
       const data = await fetchJson(`${instance}/api/v1/videos/${videoId}`, 8000) as {
         title?: string;
         thumbnailUrl?: string;
@@ -84,7 +85,8 @@ async function extractYouTubeInvidious(videoId: string): Promise<ExtractorResult
           audioUrl: audioFormat?.url,
         },
       };
-    } catch {
+    } catch (e) {
+      console.log('[MultiExtractor] Invidious failed:', e);
       continue;
     }
   }
@@ -94,6 +96,7 @@ async function extractYouTubeInvidious(videoId: string): Promise<ExtractorResult
 async function extractYouTubePiped(videoId: string): Promise<ExtractorResult> {
   for (const instance of PIPED_INSTANCES) {
     try {
+      console.log('[MultiExtractor] Trying Piped:', instance);
       const data = await fetchJson(`${instance}/streams/${videoId}`, 8000) as {
         title?: string;
         thumbnailUrl?: string;
@@ -115,7 +118,8 @@ async function extractYouTubePiped(videoId: string): Promise<ExtractorResult> {
           audioUrl: data.audioStreams?.[0]?.url,
         },
       };
-    } catch {
+    } catch (e) {
+      console.log('[MultiExtractor] Piped failed:', e);
       continue;
     }
   }
@@ -137,12 +141,13 @@ function extractYouTubeId(url: string): string | null {
 
 async function extractYouTubeYtdlp(url: string): Promise<ExtractorResult> {
   return new Promise((resolve) => {
+    console.log('[MultiExtractor] Trying yt-dlp...');
     const args = [
       '--no-playlist',
       '--dump-json',
       '--no-warnings',
       '--extractor-args', 'youtube:player_client=tv',
-      '--user-agent', 'Mozilla/5.0 (SmartTV; Tizen/6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.0.0 Safari/537.36',
+      '--user-agent', 'Mozilla/5.0 (SmartTV; Tizen/6.0) AppleWebKit/537.36',
       url,
     ];
 
@@ -157,6 +162,7 @@ async function extractYouTubeYtdlp(url: string): Promise<ExtractorResult> {
       if (code === 0 && output.trim()) {
         try {
           const data = JSON.parse(output.trim());
+          console.log('[MultiExtractor] yt-dlp success');
           resolve({
             success: true,
             platform: 'yt-dlp',
@@ -171,21 +177,21 @@ async function extractYouTubeYtdlp(url: string): Promise<ExtractorResult> {
         } catch {
           resolve({ success: false, platform: 'yt-dlp', error: 'Parse failed' });
         }
-      } else if (errorOutput.includes('unavailable')) {
-        resolve({ success: false, platform: 'yt-dlp', error: 'Video unavailable' });
       } else {
+        console.log('[MultiExtractor] yt-dlp error:', errorOutput.substring(0, 100));
         resolve({ success: false, platform: 'yt-dlp', error: errorOutput.substring(0, 100) });
       }
     });
 
     child.on('error', (error) => {
+      console.log('[MultiExtractor] yt-dlp exception:', error.message);
       resolve({ success: false, platform: 'yt-dlp', error: error.message });
     });
 
     setTimeout(() => {
       child.kill();
       resolve({ success: false, platform: 'yt-dlp', error: 'Timeout' });
-    }, 15000);
+    }, 25000);
   });
 }
 
@@ -198,25 +204,22 @@ export async function extractMedia(url: string): Promise<ExtractorResult> {
       return { success: false, platform: 'unknown', error: 'Invalid YouTube URL' };
     }
 
+    // Try yt-dlp first
     const tryYtdlp = await extractYouTubeYtdlp(url);
-    if (tryYtdlp.success) {
-      return tryYtdlp;
-    }
+    if (tryYtdlp.success) return tryYtdlp;
 
+    // Try Invidious
     const tryInvidious = await extractYouTubeInvidious(videoId);
-    if (tryInvidious.success) {
-      return tryInvidious;
-    }
+    if (tryInvidious.success) return tryInvidious;
 
+    // Try Piped
     const tryPiped = await extractYouTubePiped(videoId);
-    if (tryPiped.success) {
-      return tryPiped;
-    }
+    if (tryPiped.success) return tryPiped;
 
     return { 
       success: false, 
       platform: 'youtube', 
-      error: 'All extractors failed. Try a different video or source.' 
+      error: 'All extractors failed. Try a different source.' 
     };
   }
 
@@ -237,8 +240,7 @@ export async function extractMedia(url: string): Promise<ExtractorResult> {
 
 async function extractFacebook(url: string): Promise<ExtractorResult> {
   return new Promise((resolve) => {
-    const args = ['--no-playlist', '--dump-json', '--no-warnings', url];
-    const child = spawn('yt-dlp', args);
+    const child = spawn('yt-dlp', ['--no-playlist', '--dump-json', '--no-warnings', url]);
     let output = '';
     let errorOutput = '';
 
@@ -252,36 +254,25 @@ async function extractFacebook(url: string): Promise<ExtractorResult> {
           resolve({
             success: true,
             platform: 'facebook',
-            data: {
-              title: data.title,
-              thumbnail: data.thumbnail,
-              duration: data.duration,
-              author: data.uploader,
-            },
+            data: { title: data.title, thumbnail: data.thumbnail, duration: data.duration, author: data.uploader },
           });
         } catch {
           resolve({ success: false, platform: 'facebook', error: 'Parse failed' });
         }
       } else {
-        resolve({ success: false, platform: 'facebook', error: errorOutput.substring(0, 100) || 'Failed' });
+        resolve({ success: false, platform: 'facebook', error: errorOutput.substring(0, 100) });
       }
     });
 
-    child.on('error', (error) => {
-      resolve({ success: false, platform: 'facebook', error: error.message });
-    });
+    child.on('error', (error) => resolve({ success: false, platform: 'facebook', error: error.message }));
 
-    setTimeout(() => {
-      child.kill();
-      resolve({ success: false, platform: 'facebook', error: 'Timeout' });
-    }, 15000);
+    setTimeout(() => { child.kill(); resolve({ success: false, platform: 'facebook', error: 'Timeout' }); }, 20000);
   });
 }
 
 async function extractInstagram(url: string): Promise<ExtractorResult> {
   return new Promise((resolve) => {
-    const args = ['--no-playlist', '--dump-json', '--no-warnings', url];
-    const child = spawn('yt-dlp', args);
+    const child = spawn('yt-dlp', ['--no-playlist', '--dump-json', '--no-warnings', url]);
     let output = '';
     let errorOutput = '';
 
@@ -295,36 +286,25 @@ async function extractInstagram(url: string): Promise<ExtractorResult> {
           resolve({
             success: true,
             platform: 'instagram',
-            data: {
-              title: data.title,
-              thumbnail: data.thumbnail,
-              duration: data.duration,
-              author: data.uploader,
-            },
+            data: { title: data.title, thumbnail: data.thumbnail, duration: data.duration, author: data.uploader },
           });
         } catch {
           resolve({ success: false, platform: 'instagram', error: 'Parse failed' });
         }
       } else {
-        resolve({ success: false, platform: 'instagram', error: errorOutput.substring(0, 100) || 'Failed' });
+        resolve({ success: false, platform: 'instagram', error: errorOutput.substring(0, 100) });
       }
     });
 
-    child.on('error', (error) => {
-      resolve({ success: false, platform: 'instagram', error: error.message });
-    });
+    child.on('error', (error) => resolve({ success: false, platform: 'instagram', error: error.message }));
 
-    setTimeout(() => {
-      child.kill();
-      resolve({ success: false, platform: 'instagram', error: 'Timeout' });
-    }, 15000);
+    setTimeout(() => { child.kill(); resolve({ success: false, platform: 'instagram', error: 'Timeout' }); }, 20000);
   });
 }
 
 async function extractTiktok(url: string): Promise<ExtractorResult> {
   return new Promise((resolve) => {
-    const args = ['--no-playlist', '--dump-json', '--no-warnings', url];
-    const child = spawn('yt-dlp', args);
+    const child = spawn('yt-dlp', ['--no-playlist', '--dump-json', '--no-warnings', url]);
     let output = '';
     let errorOutput = '';
 
@@ -338,29 +318,19 @@ async function extractTiktok(url: string): Promise<ExtractorResult> {
           resolve({
             success: true,
             platform: 'tiktok',
-            data: {
-              title: data.title,
-              thumbnail: data.thumbnail,
-              duration: data.duration,
-              author: data.uploader,
-            },
+            data: { title: data.title, thumbnail: data.thumbnail, duration: data.duration, author: data.uploader },
           });
         } catch {
           resolve({ success: false, platform: 'tiktok', error: 'Parse failed' });
         }
       } else {
-        resolve({ success: false, platform: 'tiktok', error: errorOutput.substring(0, 100) || 'Failed' });
+        resolve({ success: false, platform: 'tiktok', error: errorOutput.substring(0, 100) });
       }
     });
 
-    child.on('error', (error) => {
-      resolve({ success: false, platform: 'tiktok', error: error.message });
-    });
+    child.on('error', (error) => resolve({ success: false, platform: 'tiktok', error: error.message }));
 
-    setTimeout(() => {
-      child.kill();
-      resolve({ success: false, platform: 'tiktok', error: 'Timeout' });
-    }, 15000);
+    setTimeout(() => { child.kill(); resolve({ success: false, platform: 'tiktok', error: 'Timeout' }); }, 20000);
   });
 }
 

@@ -11,10 +11,20 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// Logger middleware
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
 
 //Main route
 app.get('/', (_req: Request, res: Response) => {
   res.json({ status: 'ok', message: 'MuviDL API is running' });
+});
+
+// Health check
+app.get('/health', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 //
