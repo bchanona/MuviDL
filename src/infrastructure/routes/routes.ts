@@ -74,10 +74,15 @@ router.post('/download', async (req: Request, res: Response) => {
       return;
     }
 
+    console.log('[Route] Starting download for:', url);
+
     const mediaType: MediaType = type === 'audio' ? 'audio' : 'video';
     const task = await startDownloadUseCase.execute(url, mediaType);
+    
+    console.log('[Route] Download started, task:', task);
     res.json(task);
   } catch (error) {
+    console.log('[Route] Download error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(400).json({ error: message });
   }
