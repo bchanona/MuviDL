@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
+import { getVideoInfo } from './PythonDownloader';
 
 interface ExtractorResult {
   success: boolean;
@@ -54,6 +55,34 @@ async function fetchJson(url: string, timeout: number = 8000): Promise<unknown> 
       reject(new Error('Timeout'));
     });
   });
+}
+
+async function extractYouTubePyTubeFix(url: string): Promise<ExtractorResult> {
+  try {
+    console.log('[MultiExtractor] Trying pytubefix...');
+    const result = await getVideoInfo(url);
+    
+    if (result.success) {
+      console.log('[MultiExtractor] pytubefix success');
+      return {
+        success: true,
+        platform: 'pytubefix',
+        data: {
+          title: result.title,
+          thumbnail: result.thumbnail,
+          duration: result.duration,
+          author: result.author,
+          views: typeof result.views === 'string' ? parseInt(result.views) : result.views,
+        },
+      };
+    } else {
+      console.log('[MultiExtractor] pytubefix failed:', result.error);
+      return { success: false, platform: 'pytubefix', error: result.error };
+    }
+  } catch (e) {
+    console.log('[MultiExtractor] pytubefix exception:', e);
+    return { success: false, platform: 'pytubefix', error: String(e) };
+  }
 }
 
 async function extractYouTubeInvidious(videoId: string): Promise<ExtractorResult> {
@@ -202,9 +231,9 @@ export async function extractMedia(url: string): Promise<ExtractorResult> {
       return { success: false, platform: 'unknown', error: 'Invalid YouTube URL' };
     }
 
-    // Try yt-dlp first
-    const tryYtdlp = await extractYouTubeYtdlp(url);
-    if (tryYtdlp.success) return tryYtdlp;
+    // Try pytubefix first (uses direct API)
+    const tryPyTube = await extractYouTubePyTubeFix(url);
+    if (tryPyTube.success) return tryPyTube;
 
     // Try Invidious
     const tryInvidious = await extractYouTubeInvidious(videoId);
@@ -213,6 +242,10 @@ export async function extractMedia(url: string): Promise<ExtractorResult> {
     // Try Piped
     const tryPiped = await extractYouTubePiped(videoId);
     if (tryPiped.success) return tryPiped;
+
+    // Try yt-dlp last
+    const tryYtdlp = await extractYouTubeYtdlp(url);
+    if (tryYtdlp.success) return tryYtdlp;
 
     return { 
       success: false, 
