@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Cookies (sensitive)
+cookies/
+cookies.txt
+*.txt
+
+# Downloads (temporary files)
+downloads/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build
+*.tsbuildinfo
+
+# Test
+coverage/
+
+# Temporary
+tmp/
+temp/
