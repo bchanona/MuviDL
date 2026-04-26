@@ -36,6 +36,10 @@ autoDebugger.on('issues', ({ log, issues }) => {
 
 autoDebugger.startWatching();
 
+router.get('/ping', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 router.get('/sources', (_req: Request, res: Response) => {
   res.json({ sources: getSupportedSources() });
 });
