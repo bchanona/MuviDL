@@ -146,8 +146,6 @@ async function extractYouTubeYtdlp(url: string): Promise<ExtractorResult> {
       '--no-playlist',
       '--dump-json',
       '--no-warnings',
-      '--extractor-args', 'youtube:player_client=tv',
-      '--user-agent', 'Mozilla/5.0 (SmartTV; Tizen/6.0) AppleWebKit/537.36',
       url,
     ];
 
