@@ -12,8 +12,15 @@ cookies/
 cookies.txt
 *.txt
 
-# Downloads (temporary files)
+# Downloads - ignore actual files, keep structure
 downloads/
+downloads/*.mp4
+downloads/*.mp3
+downloads/*.zip
+downloads/*.json
+
+# But keep the folder for Render persistent storage
+!downloads/
 
 # Logs
 logs/

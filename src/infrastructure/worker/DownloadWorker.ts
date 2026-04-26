@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { detectSource } from '../../shared/utils/UrlValidator';
 import { autoDebugger } from './AutoDebugger';
+import { taskStore } from './TaskStore';
 
 interface ProcessEntry {
   process: ChildProcess;
@@ -82,6 +83,7 @@ export class DownloadWorker extends EventEmitter {
       updatedAt: new Date(),
     };
 
+    taskStore.saveTask(task);
     this.processes.set(mediaId, { process: null as unknown as ChildProcess, task });
 
     const args = this.getArgs(url, type);
@@ -94,6 +96,7 @@ export class DownloadWorker extends EventEmitter {
     this.processes.set(mediaId, entry);
 
     entry.task.status = 'downloading';
+    taskStore.saveTask(entry.task);
     this.emit('start', { mediaId, url });
 
     childProcess.stdout?.on('data', (data: Buffer) => {
@@ -106,6 +109,8 @@ export class DownloadWorker extends EventEmitter {
         entry.task.status = 'completed';
         entry.task.progress = 100;
         entry.task.completedAt = new Date();
+        entry.task.filePath = filepath;
+        taskStore.saveTask(entry.task);
         autoDebugger.logSuccess(url, source);
         this.emit('complete', { mediaId, filepath });
       }
@@ -125,6 +130,7 @@ export class DownloadWorker extends EventEmitter {
     childProcess.on('error', (error: Error) => {
       entry.task.status = 'failed';
       entry.task.error = error.message;
+      taskStore.saveTask(entry.task);
       autoDebugger.logFailure(url, source, error.message, '');
       this.emit('error', { mediaId, error: error.message });
     });
@@ -133,9 +139,11 @@ export class DownloadWorker extends EventEmitter {
       if (code !== 0 && entry.task.status !== 'completed' && entry.task.status !== 'cancelled') {
         entry.task.status = 'failed';
         entry.task.error = `Process exited with code ${code}`;
+        taskStore.saveTask(entry.task);
         autoDebugger.logFailure(url, source, `Exit code: ${code}`, '');
         this.emit('error', { mediaId, error: entry.task.error });
       }
+      taskStore.saveTask(entry.task);
       this.processes.delete(mediaId);
     });
 
@@ -152,12 +160,15 @@ export class DownloadWorker extends EventEmitter {
     entry.task.status = 'cancelled';
     entry.task.updatedAt = new Date();
     this.processes.delete(mediaId);
+    taskStore.deleteTask(mediaId);
     this.emit('cancel', { mediaId });
   }
 
   getStatus(mediaId: string): DownloadTask | null {
     const entry = this.processes.get(mediaId);
-    return entry ? entry.task : null;
+    if (entry) return entry.task;
+    
+    return taskStore.getTask(mediaId);
   }
 
   getProgress(mediaId: string): number {
@@ -166,7 +177,7 @@ export class DownloadWorker extends EventEmitter {
   }
 
   getAllTasks(): DownloadTask[] {
-    return Array.from(this.processes.values()).map(entry => entry.task);
+    return taskStore.getAllTasks();
   }
 }
 

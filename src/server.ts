@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import routes from './infrastructure/routes/routes';
+import { taskStore } from './infrastructure/worker/TaskStore';
 
 dotenv.config();
 
@@ -25,6 +26,12 @@ app.get('/', (_req: Request, res: Response) => {
 // Health check
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Keep awake (ping every 5 min from Android)
+app.get('/ping', (_req: Request, res: Response) => {
+  taskStore.cleanup();
+  res.json({ status: 'ok', tasks: taskStore.getAllTasks().length });
 });
 
 //
